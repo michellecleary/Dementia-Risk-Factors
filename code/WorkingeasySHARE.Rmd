@@ -1,0 +1,684 @@
+---
+title: 'Dementia Risk Factors: EDA of easySHARE data'
+author: "Michelle Cleary, Fionnuala Marshall, Ellen Crombie"
+header-includes: #allows you to add in your own Latex packages
+- \usepackage{float} #use the 'float' package
+- \floatplacement{figure}{H} #make every figure stay in position
+- \usepackage{xcolor} #use the 'xcolor' package
+output:
+  html_document: default
+  bibliography: references.bib 
+  pdf_document: default
+  bookdown::pdf_document2: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE, fig.pos = "H")
+set.seed(1234)
+```
+
+```{r easyshare}
+load("../data/easySHARE_rel8_0_0.rda")
+dat<-easySHARE_rel8_0_0
+```
+
+```{r packs, message = FALSE}
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(tidyverse))
+suppressPackageStartupMessages(library(gridExtra))
+suppressPackageStartupMessages(library(countrycode))
+suppressPackageStartupMessages(library(magrittr))
+suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(kableExtra))
+suppressPackageStartupMessages(library(visdat))
+suppressPackageStartupMessages(library(coefplot))
+suppressPackageStartupMessages(library(car))
+suppressPackageStartupMessages(library(pander))
+```
+
+```{r create-new-variable}
+# Create country_name col
+dat$country_name <- countrycode(dat$country_mod, "iso3n", "country.name")
+```
+
+```{r cogindices, message = FALSE, fig.height=3, fig.width=9}
+cogvars <- c("recall_1", "recall_2", "orienti", "numeracy_1", "numeracy_2")
+cog = dat[cogvars]
+```
+
+```{r numeracy}
+numeracy = rep(NA,dim(cog)[1])
+numeracy[cog$numeracy_1 >= 0 & cog$numeracy_2 >= 0] = (cog$numeracy_1[cog$numeracy_1 >= 0 & cog$numeracy_2 >= 0] + cog$numeracy_2[cog$numeracy_1 >= 0 & cog$numeracy_2 >= 0] )/2
+numeracy[cog$numeracy_1 >= 0 & cog$numeracy_2 < 0] = cog$numeracy_1[cog$numeracy_1 >= 0 & cog$numeracy_2 < 0]
+numeracy[cog$numeracy_1 < 0 & cog$numeracy_2 >= 0] = cog$numeracy_2[cog$numeracy_1 < 0 & cog$numeracy_2 >= 0]
+cog$numeracy = numeracy
+```
+
+```{r cogscore, message = FALSE, warning=FALSE}
+cogscore = rep(NA,dim(cog)[1])
+ind = cog$recall_1 >= 0 & cog$recall_2 >= 0 & !is.na(cog$numeracy)
+cogscore[ind] = cog$recall_1[ind] + cog$recall_2[ind] + cog$numeracy[ind]
+cog$cogscore = cogscore
+dat$cogscore<-cog$cogscore
+max_score <- max(dat$cogscore, na.rm = TRUE) # 25
+min_score <- min(dat$cogscore, na.rm = TRUE) # 0
+```
+
+```{r filter-country-wave}
+# Filter by country and wave: Italy, Estonia, Poland, Denmark - Wave 4
+overall_data <- filter(dat, dat$country_name %in% c("Belgium", "Austria"),
+                        dat$wave %in% c(4,5))
+```
+
+```{r delete-dat}
+rm(dat)
+```
+
+```{r remove-negative-vals}
+# Replace negative values with NA
+overall_data[overall_data<0] <- NA
+```
+
+```{r factoring}
+# gender
+overall_data$gender <- factor(overall_data$female, labels=c("0: male", "1: female"))
+
+# area, refactored
+overall_data$location <- factor(overall_data$iv009_mod, labels=c("city/town/outskirts", "city/town/outskirts","city/town/outskirts","city/town/outskirts", "rural"))
+
+# education
+overall_data$education<- factor(overall_data$isced1997_r, labels=c("0 - none", "1 - Primary education", "2 - Secondary education", "2 - Secondary education", "3 - Post-secondary non-tertiary education", "4 - Tertiary education", "4 - Tertiary education", "Still in School", "5 - other"))
+overall_data$education[overall_data$education == "Still in School"] <- NA
+overall_data$education <- droplevels(overall_data$education)
+
+# household_size, NA:0 
+overall_data <- overall_data %>%
+  rename(household_size = hhsize)
+
+# partner_in_household
+overall_data$partner_in_household <- factor(overall_data$partnerinhh, labels=c("1: living with a spouse/partner in household", "2: living without spouse/partner in household"))
+# number_children, NA: 73 
+overall_data <- overall_data %>%
+  rename(number_children = ch001_)
+
+#received_help, NA:107
+overall_data$received_help <- factor(overall_data$sp002_mod, labels=c("yes", "no"))
+
+#number_chronic_condtn CHECK THIS WITH HER ONE
+overall_data <- overall_data %>%
+  rename(number_chronic_condtn = chronic_mod)
+
+# casp_12_score
+overall_data <- overall_data %>%
+  rename(casp_12_score = casp)
+
+# depression
+overall_data$depression <- factor(overall_data$euro1, 
+                                  labels = c("0: not depressed", "1: depressed"))
+
+# concentration
+overall_data$concentration <- factor(overall_data$euro10, 
+                                     labels = c("0: no difficulty concentrating",
+                                                "1: difficulty concentrating"))
+
+# depression_scale_eurod CHECK WHY SHE FACTORED THIS
+overall_data$depression_scale_eurod <- factor(overall_data$eurod)
+
+#mobility SHE ALSO REFACTORED THIS ONE
+overall_data$mobility <- factor(overall_data$mobilityind, labels=c("high", "satisf.", "fair", "poor", "low"))
+
+#bmi_category
+overall_data$bmi_category <- factor(overall_data$bmi2, 
+                                 labels= c("Underweight", "Normal", 
+                                           "Overweight", "Obese"))
+
+#smoking
+overall_data$smoking <- factor(overall_data$smoking,
+                               labels=c("yes", "no"))
+
+#ever_smoked_daily
+overall_data$ever_smoked_daily <- factor(overall_data$ever_smoked, labels=c("yes", "no"))
+
+# drinking_behaviour, refactored
+overall_data$drinking_behaviour<- factor(overall_data$br010_mod, 
+                                 labels= c("1 - Less than twice a month or not at all",
+                                           "1 - Less than twice a month or not at all",
+                                           "1 - Less than twice a month or not at all",
+                                           "2 - Once or twice a week",
+                                           "3 - Three or four days a week",
+                                           "4 - Almost every day",
+                                           "4 - Almost every day"))
+
+# vigorous_activity
+overall_data$vigorous_activity<- factor(overall_data$br015_, 
+                              labels= c("more than once a week",
+                                        "once a week",
+                                        "one to three times a month",
+                                        "hardly ever, or never"))
+
+# current_job, refactored
+overall_data$current_job <- factor(overall_data$ep005_, 
+                              labels= c("retired", 
+                                         "employed or self-employed (including working for family business)",
+                                         "unemployed or homemaker",
+                                         "permanently sick or disabled",
+                                         "unemployed or homemaker",
+                                         "other"))
+
+# household_net_income
+overall_data <- overall_data %>% rename(household_net_income = thinc_m)
+
+# make_ends_meet
+overall_data$make_ends_meet <- factor(overall_data$co007_, 
+                          labels= c("With great difficulty", 
+                                    "With some difficulty", 
+                                    "Fairly easily", "Easily"))
+```
+
+
+```{r choosing-variables}
+test_overall_data <- overall_data[ , c('country_name', 'wave', 'gender', 'age', 'location', 'education', 'household_size', 'partner_in_household', 'number_children',  'received_help', 'number_chronic_condtn', 'casp_12_score', 'depression', 'concentration', 'depression_scale_eurod', 'mobility', 'cogscore', 'bmi', 'smoking', 'ever_smoked', 'drinking_behaviour', 'vigorous_activity', 'current_job', 'household_net_income', 'make_ends_meet')]
+```
+
+```{r build-models}
+# Create training dataset
+training_data <- filter(test_overall_data, 
+                        test_overall_data$country_name == "Belgium",
+                        test_overall_data$wave == 4)
+
+training_data <- subset(training_data, select = -c(country_name, wave))
+# Remove 200 random observations
+random_observations_index <- sample(nrow(training_data), 200)
+random_observations <- training_data[random_observations_index,]
+training_data <- training_data[-random_observations_index,]
+```
+
+## Executive Summary
+
+Year on year, the number of people with dementia is rising, along with the associated global dementia cost. The purpose of this report is to investigate modifiable risk factors of dementia and determine whether dementia prevention policies may be effective. Using data from high income countries (HICs), namely Belgium and Austria, we evaluated and validated factors suggested by the 2017 Lancet Commission \cite{Lancet Report}.
+
+The results of our statistical experiments agreed with wider research literature, that older age has a very significant impact on the onset of dementia. In light of this, we aimed to determine whether modifiable risk factors such as education level reached in early life, drinking behaviour and quality of life index should be modified by participants to reduce the risk of dementia.
+
+The results suggest that the further the education level reached in early life (younger than 45 years), the lower the risk of dementia in later life. The biggest improvement seen in reducing dementia severity is from primary to secondary education, as seen in Figure \ref{education-bar-plot}. Although this conclusion is drawn from HIC data where primary and secondary education is almost always compulsory, it may in fact be more relevant to low- and middle-income countries (LMICs), where secondary education is not necessarily provided or mandatory. In this case, policy should prioritise ensuring secondary education as a mandatory or incentivised option for all. 
+
+```{r education-bar-plot, fig.height=3, fig.width=6, fig.cap="\\label{education-bar-plot}Education level against mean cognitive score, where cognitive score is used as a proxy for severity of dementia. A lower cognitive score indicates higher severity of dementia. The figure shows that lower levels of education indicate a lower cognitive score." }
+education_bar_plot_data <- na.omit(training_data[c("education",
+                                           "cogscore")]) %>%
+  group_by(education) %>%
+  summarise(meancogscore = mean(cogscore))
+
+
+ggplot(education_bar_plot_data, aes(x = education, y = meancogscore, fill = education)) +
+  geom_bar(stat = "identity") +
+  theme(legend.position = "none") + 
+  labs(x = "Education", y = "Mean Cognitive Score") +
+  scale_x_discrete(labels = c("None", "Primary", "Secondary",
+                              paste("Post-secondary\n non-tertiary"),
+                              "Tertiary", "Other"))
+
+```
+
+Further to this, difficulty concentrating is associated with an increased risk of the onset of dementia in later life, as shown in Figure \ref{concentrationplot}. Therefore keeping the brain active throughout life would be beneficial, whether this be through adult education, playing board games such as chess, or joining a book club.  
+
+```{r concentrationplot, fig.height = 4, fig.width = 4, fig.cap = "\\label{concentrationplot}Concentration level against mean cognitive score, where cognitive score is used as a proxy for severity of dementia. A lower cognitive score indicates higher severity of dementia. The figure shows that difficulty concentrating indicates a lower cognitive score.", fig.pos="H"}
+
+training_data_na_omit <- na.omit(training_data)
+
+meancogdat <- training_data_na_omit %>% 
+  group_by(concentration) %>% 
+  summarise(meancog = mean(cogscore))
+  
+ggplot(meancogdat, aes(x = concentration, y = meancog, fill = concentration)) +
+  geom_bar(stat = "identity", width = 0.75) + 
+  theme(legend.position = "none") + 
+  labs(x = "Concentration", y = "Mean Cognitive Score") +
+  scale_x_discrete(labels = c("No difficulty concentrating", 
+                              "Difficulty concentrating"))
+```
+
+This report ensures the model was validated across data from different years and across different countries. However the main focus is on data from HICs, where health policies are developed and care is well established on the whole. It would be of particular use to investigate whether the suggested preventative measures are indeed relevant to LMICs. Populations in these countries are reaching later ages more regularly than in previous decades, and so preventative policies may have large impact on reducing the risk of dementia.  
+
+
+\sffamily\fboxrule.1em\fboxsep1em
+\fcolorbox{cyan}{cyan!50}{\color{black}
+\begin{minipage}[c][][t]{15.5cm}
+\textbf{Key messages}
+\begin{enumerate}
+\item The number of people with dementia is rising globally, however the majority of research investigates data from High Income Countries.
+\item Older age has a significant association with a higher risk of dementia but there are modifiable risk factors which might prevent or delay dementia.
+\item Recommended preventative policies include providing sufficient primary and secondary education for all children as this may reduce the risk of dementia in later life.
+\item Keeping the brain active throughout life may also reduce risk of dementia. There are many ways to achieve this, including adult education, card games, and reading. 
+\end{enumerate}
+\end{minipage}}
+
+
+\newpage
+## Introduction
+
+It has been estimated that almost 9.9 million people develop dementia each year, and by 2030 it is predicted that the current 55 million people affected will have risen to 75 million \cite{WHO Report}. The WHO report entitled 'The Epidemiology and Impact of Dementia' \cite{Epidemiology} describes vast and extensive research into older age as a risk factor of dementia, however the Lancet Report \cite{Lancet Report} identifies 12 modifiable risk factors using evidence from high-income countries (HICs). These include; social isolation, highest education level reached and excessive alcohol consumption.
+
+In this report, we will create a model for dementia risk prediction using the easySHARE data set, and assess the predictive performance of our model using validation. We will focus on a selection of modifiable risk factors of dementia as indicated by the Lancet Report, and aim to determine whether these risk factors as a whole might outperform a benchmark model which uses only age as the predictor.
+
+Karel G M Moons' review article on Risk Prediction Models \cite{Risk Prediction} confirms that validation is particularly important, and warns that good performance of a selected model on a selected set of data is insufficient, even after internal validation. This report aims to remedy the inadequacies of common medical research by performing spatial and temporal validation on the model, using clear and consistent data handling.
+
+We will analyse and validate data from HICs, namely Belgium and Austria. Therefore, preventative measures and risk-reducing suggestions may differ in LMIC cultures and settings. 
+
+Individual contributions include:
+
+- Michelle Cleary (s1979093): Assessment of predictive performance and fitting the model.
+
+- Ellen Crombie (s1907212): Executive summary and pre-processing.
+
+- Fionnuala Marshall (s1907509): Model assumption validity and graphical summaries.
+
+## Methods
+
+We investigated the risk factors of dementia using data from Belgium within Wave 4 of the easySHARE data set. This wave was selected based on the low rate of missing information and high participation levels within relevant questionnaire questions. The initial risk factors were selected by their relevance to the 12 modifiable predictors determined by the Lancet Report \cite{Lancet Report}; education, hearing loss, traumatic brain injury, hypertension, alcohol consumption, smoking, obesity, physical activity, depression, social isolation, diabetes and air pollution.
+
+### Creating the response variable
+
+EasySHARE does not record diagnosis of Alzheimer's disease (dementia) in all waves. Instead, we created a composite cognitive score as a proxy for dementia severity, ranging from 0 (bad) to 25 (good), combining the recall scores and numeracy measures,  following Crimmins' Assessment of cognition study \cite{Cognition}.  It is worthwhile to note that we take the mean value of both numeracy scores from the data set to make the model applicable to further waves where just one or both of the numeracy measures were available. The assessment of cognition study \cite{Cognition} suggests using orientation as a component of cognitive score, however, this report chooses not to do so due to the vast amount of missing values within the data set (11,406 out of the possible 20,370 for waves 4 and 5 at this stage of analysis).
+
+
+### Cleaning and selecting the data
+
+We extracted 28 variables to investigate from the 102 available, including gender, in order to explore whether certain risk factors differed for male and female participants. As suggested by the risk predicition article \cite{Risk Prediction}, certain variables were omitted if more than 10\% of entries were missing. Figure \ref{sortedmissingvalues} shows that, from our chosen subset of variables, only 1.5\% of the remaining observations have missing values. This implies that the model we create using these variables will have a higher level of integrity and be a more accurate prediction from the variables selected. For example, the number of years of education completed was not included because 1575 out of the possible 20370 entries were missing. Instead, the furthest level of education reached was included, which had fewer missing values (246) and could describe the same effect. 
+
+Further variables were not selected on this basis. These included the residential proximity of children and the number of grandchildren and siblings alive, which may have been important contributors in determining a respondent's social interaction. However, in a high income country such as Belgium, they may have had less of an effect due to improved ease of transport.
+
+Next, we coded factor variables and made simplifications based on the number of entries at each level. For example, furthest education levels were combined into 6 levels from the original 9. The level 'still in school' was dropped due to it including only 6 data values, all of which were from respondents who were aged 50 and below and outside the main focus area of this investigation. Factor levels for living area were also reduced to distinguish between living in an urban or rural area, with 12492 and 6990 entries for each level respectively and 888 missing values. 
+
+
+```{r sorted-na-plot, fig.cap="\\label{sortedmissingvalues}Plot sorting variables by proportion of missing values", fig.pos="H", fig.height=5, fig.width=8}
+vis_miss(test_overall_data, sort_miss = TRUE)
+```
+
+
+``` {r investigating-missing-values, eval=FALSE}
+# Compute number of missing values for reference
+# 20370 values, 26
+dim(test_overall_data)
+# 17526, 26
+dim(na.omit(test_overall_data)) # would lose many obs
+```
+
+### Fitting the model
+
+We separated 200 randomly selected observations (the validation data), with the remaining 5122 making up the training data set. When then fit a linear model based on the training data.
+
+The significance level ($p$ < 0.01) was chosen to reduce the risk of selecting less important predictors. However, as detailed by the Risk Predicition article \cite{Risk Prediction}, predictor inclusion and exclusion was not solely dependent on the statistical significance of each predictor. Instead, a combined approach of evaluating statistical significance and performing stepwise selection was employed. Both AIC and BIC criterion were trialled, yet we eventually chose to use BIC criterion since the sample size was sufficiently large and a consistent, simpler model was favourable \cite{AICBIC}.
+
+
+```{r AIC-model, eval=FALSE}
+# Remove all rows with NAs
+training_data_na_omit <- na.omit(training_data)
+# Create model with all remaining variables
+ModelAll <- lm(formula = cogscore ~ ., data = training_data_na_omit)
+# Stepwise variable selection on previous model
+StepModelAllAIC <- step(ModelAll, trace = 0, direction = "both") #Suppress printout
+```
+
+```{r BIC-model}
+# Remove all rows with NAs
+training_data_na_omit <- na.omit(training_data)
+# Create model with all remaining variables
+ModelAll <- lm(formula = cogscore ~ ., data = training_data_na_omit)
+# Stepwise variable selection on previous model
+StepModelAllBIC <- step(ModelAll, trace = 0, 
+                        direction = "both", 
+                        k = log(nrow(training_data_na_omit))) #Suppress printout
+```
+
+```{r define-final-model}
+# Final model based on stepwise variable selection
+final_model <- lm(cogscore ~ gender + age + education + casp_12_score + 
+                  concentration + drinking_behaviour, 
+                  data = training_data_na_omit)
+```
+
+```{r f-test, eval=FALSE}
+# Perform F-test
+drop1(StepModelAllBIC, test="F")
+```
+
+```{r added-variable-plot, fig.width = 9, fig.cap="\\label{ageplot}Scatterplot of age against cognitive score, holding all other predictors constant", fig.pos="H"}
+# Plot cogscore against age, holding all other covariates constant
+avPlot(final_model, variable = "age")
+```
+
+
+Figure \ref{ageplot} confirms the findings of the WHO Epidemiology report \cite{Epidemiology} and clearly identifies an association between increased age and a lower cognitive score. Although at each age there is a wide spread of cognitive score values, the average scores show a strong negative correlation with age.
+
+## Results
+
+### Final model
+
+We model cognitive score, $\text{cogscore}_i$, for individual $i=1,...,n$ as
+$$
+\text{cogscore}_i = \alpha + \boldsymbol{x}^T_i\boldsymbol{\beta}+\epsilon _i
+$$
+with $\epsilon _i$ following a normal distribution with mean zero and variance $\sigma ^2$.
+The vector $\boldsymbol{x}_i$ is a row of the model matrix for observation $i$ containing dummy variables for the factor variables gender, education, concentration, and drinking_behaviour. In addition, $\boldsymbol{x}_i$ contains the continuous variable age and the discrete variable casp_12_score. As identifiability constraints, the first level of each factor is set to zero. The vector $\boldsymbol{\beta}$ contains all the parameters relating to the columns in the model matrix $X$. That is, $\boldsymbol{\beta}$ is given by the estimate values in Table \ref{tab:final-model}, which illustrates the summary statistics for the final model. Table \ref{tab:model-variables} provides explanations of factor levels and meaning of variable names.
+
+```{r final-model}
+predictor_labels <- c("Intercept", "Gender - Female", "Age",
+                                   "Education - Primary",
+                                   "Education - Secondary",
+                                   "Education - Post-secondary non-tertiary",
+                                   "Education - Tertiary",
+                                   "Education - Other",
+                                   "CASP-12 score", "Concentration",
+                                   "Drinking behaviour - 1-2 days a week",
+                                   "Drinking behaviour - 3-4 days a week",
+                                   "Drinking behaviour - Almost every day")
+model_summary_stats <- data.frame(summary(final_model)$coefficients[, 1],
+                                  confint(final_model),
+                                  summary(final_model)$coefficients[, 4])
+colnames(model_summary_stats) <- c("Estimate", "2.5%", "97.5%", "p-value")
+#rownames(model_summary_stats) <- predictor_labels
+knitr::kable(model_summary_stats,
+             caption = "Regression coefficient estimates, 95\\% confidence intervals, and p-values of the predictors in the final model for cognitive score", digits = 4) %>%
+  kable_styling(latex_options = "HOLD_position")
+```
+
+
+```{r model-variables}
+Variables <- c("gender", "age", "education", "casp_12_score", "concentration",
+               "drinking_behaviour")
+Explanation <- c("Gender", "Age", "Level of education", 
+                 "CASP-12 score (quality of life), ranging from 12 to 48", "Concentration",
+                 "Drinking behaviour")
+Type <- c("Factor, 2 levels", "Continuous", "Factor, 6 levels", 
+          "Discrete", "Factor, 2 levels", "Factor, 4 levels")
+Levels <- c("Male, female", "-", 
+            "None, primary, secondary, post-secondary non-tertiary, tertiary, other", 
+            "-", "No difficulty with concentration, difficulty with concentration",
+            "Less than twice a month or almost never, once or twice a week, three or four days a week, almost every day")
+
+model_variables <- data.frame(Variables, Explanation, Type, Levels)
+knitr::kable(model_variables, caption = "Explanatory variables") %>% 
+  column_spec(1, width = "9em") %>%
+  column_spec(2, width = "11em") %>%
+  column_spec(3, width = "6em") %>%
+  column_spec(4, width = "16em") %>%
+  kable_styling(latex_options = "HOLD_position")
+```
+
+All of the predictor variables within our model are statistically significant. Being female is associated with a 0.5987 increase in cognitive score compared to being male. CASP-12 score has a weak positive association with cognitive score, with a 0.0432 increase in cognitive score per unit CASP-12 score increase. Surprisingly, more frequent drinking behaviour have positive associations with cognitive score. Higher levels of education also suggest a higher cognitive score. Age and concentration are associated with cognitive score decreasing by 0.1270 and 0.7914 per unit increase respectively.
+
+### Validation of assumptions
+
+As seen in Figure \ref{assumptions}, we plotted a graph of Residuals vs Fitted Values in order to check if our model assumption of constant variance was valid.
+
+```{r assumptions-plot, fig.cap="\\label{assumptions}Residuals vs Fitted values plot to test model assumption of constant variance", fig.pos="H"}
+plot(final_model, which = c(1, 1))
+```
+
+
+The residuals appear to be randomly scattered around the zero line. This implies that the zero expectation of residuals for our model appears to be entirely justified.
+
+When investigating the normality assumption of our model, we found there were slight deviations in the tails of the Q-Q plot. Upon adjusting the model by transforming variables, this made no significant difference to either plot. Thus, creating a more complex model to very insignificantly bring the model closer to our required assumptions did not appear to be a sensible decision.
+
+### Assessment of predictive performance
+
+We assess the predictive performance of the model by estimating root mean squared error (RMSE), which compares the true and predicted cognitive score of each individual. We also estimate the mean Dawid-Sebastiani (MDS) score, which compares each true value to the mean and variance of the predicted values for cognitive score. Both of these scores are negatively oriented, i.e. the lower the score, the better. 
+
+Letting $n$ be the total number of observed individuals in the test dataset and $y_i$ the true predicted cognitive score of individual $i$, we define the scores as follows:
+
+$$
+RMSE = \sqrt{\frac{1}{n}\sum_{i=1}^n (y_i - \hat{y}_i)^2}, 
+$$
+
+where $\hat{y}_i$ is the predicted cognitive score of individual $i$, and
+
+$$
+MDS = \frac{1}{n}\sum_{i=1}^n \frac{(y_i - \mu)^2}{\sigma ^2} + \log(\sigma ^2),
+$$
+
+where $\mu$ and $\sigma ^2$ are the prediction mean and variance, respectively.
+
+We use the following test data for validation:
+
+* Training data - Belgium, Wave 4.
+
+* The validation data (200 observations left out from initial data) - Belgium, Wave 4.
+
+* The training data, but a different wave - Belgium, Wave 5.
+
+* The training data, but a different country - Austria, Wave 4.
+
+```{r test-data}
+# Define different test datasets
+
+# Same as training data 
+test_data_training <- training_data
+
+# 200 observations left out from the initial data
+test_data_200obs <- random_observations
+
+# Data from a different wave but the same country
+test_data_wave5 <- filter(test_overall_data, 
+                          test_overall_data$country_name == "Belgium",
+                          test_overall_data$wave == 5)
+
+# Same wave as the training data but a different country
+test_data_austria <- filter(test_overall_data, 
+                            test_overall_data$country_name == "Austria",
+                            test_overall_data$wave == 4)
+
+# Define benchmark (minimal) model
+benchmark <- lm(cogscore ~ age, 
+                data = training_data_na_omit)
+gamma <- round(summary(benchmark)$coefficients[1], digits = 4)
+omega <- round(summary(benchmark)$coefficients[2], digits = 4)
+```
+
+We define a benchmark model as:
+
+$$
+\text{cogscore}_i = \gamma + {\omega}(\text{age}_i)+\epsilon _i
+$$
+
+with $\epsilon _i$ following a normal distribution with mean zero and variance $\sigma ^2$, $\gamma =$ `r gamma`, and $\omega =$ `r omega`.
+
+We compare the scores for our model with those for the benchmark model to assess our model's predictive performance and the importance of variables for prediction.
+
+
+```{r root-mean-squared-error}
+# Define function to compute root mean squared error (RMSE)
+RMSE <- function(model, test_data){
+  SE <- (test_data$cogscore - predict(model, test_data)) ^ 2
+  MSE <- mean(SE, na.rm = TRUE)
+  RMSE <- sqrt(MSE)
+  return(RMSE)
+}
+
+# Compute RMSE for each test dataset
+RMSE_benchmark <- c(RMSE(benchmark, test_data_training),
+                        RMSE(benchmark, test_data_200obs),
+                        RMSE(benchmark, test_data_wave5),
+                        RMSE(benchmark, test_data_austria))
+RMSE_model <- c(RMSE(final_model, test_data_training),
+                        RMSE(final_model, test_data_200obs),
+                        RMSE(final_model, test_data_wave5),
+                        RMSE(final_model, test_data_austria))
+RMSE_df <- data.frame(RMSE_benchmark, RMSE_model)
+rownames(RMSE_df) <- c("Training data: Belgium - Wave 4", 
+                       "Validation data: Belgium - Wave 4", 
+                       "Belgium - Wave 5", "Austria - Wave 4")
+colnames(RMSE_df) <- c("Benchmark model", "Actual model")
+knitr::kable(RMSE_df, 
+             caption = "Root mean squared error for each test dataset",
+             escape = "F", digits = 4) %>%
+  kable_styling(latex_options = "HOLD_position")
+```
+
+As seen in Table \ref{tab:root-mean-squared-error}, the RMSE for our actual chosen model was lower than that of the benchmark model for each dataset, indicating that the variables in our model are important for prediction. Focusing on our chosen model, all of the RMSE values are quite similar, with a difference of `r 3.8169-3.4156` between the highest and lowest. The RMSE was lowest for the validation data. Particularly, it is lower than that for the training data, which suggests we have not overfitted the model. The RMSE for the test data from Wave 5 is very similar to that for the training data, indicating that our model's predictive performance is similar across different waves. Although the test data for Austria had the highest RMSE, it is still relatively low. This suggests that our model's predictive performance may not be as accurate across different countries, but is still relatively good.
+
+```{r mds}
+# Define function to compute mean Dawid-Sebastiani (DS) score
+mean_ds_score <- function(model, test_data) {
+  pred <- predict(model, test_data)
+  mu <- mean(pred, na.rm = TRUE)
+  sigma <- var(pred, na.rm = TRUE)
+  score <- ((test_data$cogscore - mu) / sigma)^2 + 2 * log(sigma)
+  mean_score <- mean(score, na.rm = TRUE)
+  return(mean_score)
+}
+
+
+# Compute mean DS for each test dataset
+mean_ds_score_benchmark <- c(mean_ds_score(benchmark, test_data_training),
+                        mean_ds_score(benchmark, test_data_200obs),
+                        mean_ds_score(benchmark, test_data_wave5),
+                        mean_ds_score(benchmark, test_data_austria))
+mean_ds_score_model <- c(mean_ds_score(final_model, test_data_training),
+                        mean_ds_score(final_model, test_data_200obs),
+                        mean_ds_score(final_model, test_data_wave5),
+                        mean_ds_score(final_model, test_data_austria))
+mean_ds_score_df <- data.frame(mean_ds_score_benchmark, mean_ds_score_model)
+rownames(mean_ds_score_df) <- c("Training data: Belgium - Wave 4", 
+                       "Validation data: Belgium - Wave 4", 
+                       "Belgium - Wave 5", "Austria - Wave 4")
+colnames(mean_ds_score_df) <- c("Benchmark model", "Actual model")
+knitr::kable(mean_ds_score_df, 
+             caption = "Mean Dawid-Sebastiani score for each test dataset",
+             escape = "F", digits = 4) %>%
+  kable_styling(latex_options = "HOLD_position")
+```
+
+Similar to RMSE, the MDS for our model was lower than that of the benchmark model for each dataset, shown in Table \ref{tab:mds}. This strengthens our previous observation that the variables in our model are important for prediction. With regard to our chosen model, all of the MDS values are quite similar, with the test data for Austria having the highest score, and the validation data having the lowest. The scores again suggest that overfitting is not an issue, and that our model's predictive performance is similar across different waves and relatively good across different countries. Overall, the MDS scores provide further support to the conclusions drawn from the RMSE values above.
+
+
+```{r se-plot, echo = FALSE, fig.width = 9, results='hide', fig.cap="\\label{errorplot}Scatterplot of cognitive score against root squared error and Dawid-Sebastiani scores for each test dataset, illustrating that both the root squared error (RSE) and Dawid-Sebastiani (DS) scores follow the same U-shaped trend."}
+scores <- function(model, test_data){
+  pred <- predict(model, test_data)
+  cogscore <- test_data$cogscore
+  SE <- (cogscore - pred) ^ 2
+  mu <- mean(pred, na.rm = TRUE)
+  sigma <- var(pred, na.rm = TRUE)
+  DS <- ((cogscore - mu) / sigma)^2 + 2 * log(sigma)
+  if (deparse(substitute(test_data)) == "test_data_training"){
+    test <- "Belgium, Wave 4 (training data)"}
+  if (deparse(substitute(test_data)) == "test_data_200obs"){
+    test <- "Belgium, Wave 4 (validation data)"}
+  if (deparse(substitute(test_data)) == "test_data_wave5"){
+    test <- "Belgium, Wave 5"}
+  if (deparse(substitute(test_data)) == "test_data_austria"){
+    test <- "Austria, Wave 4"}
+  df <- data.frame(test, SE, DS, cogscore)
+  colnames(df) <- c("test_data", "SE", "DS", "cogscore")
+  df
+}
+
+df <- data.frame(matrix(nrow = 0, ncol = 4))
+colnames(df) <- c("test_data", "SE", "DS", "cogscore")
+df <- rbind(df, scores(final_model, test_data_training))
+df <- rbind(df, scores(final_model, test_data_200obs))
+df <- rbind(df, scores(final_model, test_data_wave5))
+df <- rbind(df, scores(final_model, test_data_austria))
+  
+df %>%
+  ggplot() +
+  geom_point(aes(cogscore, sqrt(SE), colour = "Root squared error"), alpha = 0.5) +
+  geom_point(aes(cogscore, DS, colour = "Dawid-Sebastiani")) +
+  xlab("Cognitive score") +
+  ylab("Score") +
+  ggtitle("Cognitive score against root squared error and Dawid-Sebastiani scores for each test dataset") +
+  scale_colour_manual(name="Legend", values = c("red", "blue")) +
+  facet_wrap(~test_data)
+```
+
+Figure \ref{errorplot} shows that both root squared error and Dawid-Sebastiani scores are highest for extreme value cognitive scores. They are lowest for mid-range cognitive scores, between 10-15. This suggests that our model is best at predicting mid-range cognitive scores, and is less accurate at predicting the more extreme valued scores. These results are not surprising as only 2.2\% and 3.9\% of the observations in the training data had cognitive score values below 5 and above 20, respectively. Since our sample had very few extreme value scores and many mid-range scores, we would expect it to be most accurate at predicting mid-range scores.
+
+```{r extreme-values, eval=FALSE} 
+n <- length(training_data_na_omit$cogscore)
+sum(training_data_na_omit$cogscore < 5) / n
+sum(training_data_na_omit$cogscore > 20) / n 
+```
+
+\newpage
+
+## Conclusion
+
+The model highlighted several key findings. Firstly, as can be seen in Figure \ref{forest}, difficulty in concentration is associated with a negative cognitive score and therefore a higher severity of dementia, as opposed to not having any difficulty concentrating. Whilst improving concentration is not a straightforward task, we believe this is a modifiable risk factor that can be alleviated by keeping cognitviely active in later life. This may include adult education or learning, playing thinking games, or joining a book club. 
+
+```{r forest-plot, fig.height=4, fig.cap="\\label{forest}Plot of coefficients and standard errors for factor variables from the final model", fig.pos="H"}
+# Do not include age as it is continuous
+forest <- coefplot(final_model, predictors=c("gender", "education",  
+                               "casp_12_score","concentration", "drinking_behaviour"))
+forest
+```
+
+The further the level of education reached in early life is also associated with a higher cognitive score in later life, and therefore a lower severity of dementia. Figure \ref{education-plot} shows that mean cognitive score continually increases from primary through to tertiary levels of furthest education reached. Considering this, we recommend that preventative policies for dementia should indeed prioritise primary and secondary education, and perhaps investigate ways to encourage tertiary education where possible. 
+
+
+```{r education-plot, fig.height=4, fig.width=8, fig.cap="\\label{education-plot}Education level against cognitive score boxplot, showing that higher levels of education are associated with a higher cognitive score.", fig.pos="H"}
+# Store the graph
+box_plot <- ggplot(training_data_na_omit, aes(x = education, y = cogscore))
+# Add the geometric object box plot
+box_plot +
+  geom_boxplot() +
+  labs(x = "Education", y = "Mean Cognitive Score") +
+  scale_x_discrete(labels = c("None", "Primary", "Secondary",
+                              paste("Post-secondary\n non-tertiary"),
+                              "Tertiary", "Other"))
+```
+
+When modelling with particular variables, we came across some variables which were poorly measured. This consequently made modelling with them cause some difficulties as it was not clear how different subgroups were defined. A clear example of this was within the education classification variable. Here, a category was labelled 'other', however, upon looking at all remaining categories, it was not clear what other levels of education may have not already been included. This factor level of the education variable was significant within our model, nonetheless, without extra information, it was impossible to draw conclusions and explanations regarding what this might mean in relation to cognitive score.
+
+Whilst consistent data handling and statistical methods have been applied throughout the formation of this model, there are limitations that should be addressed. In particular, it would have been beneficial to validate the model over a larger time frame, in addition to the temporal validation already carried out (between Waves 4 and 5). Modifiable risk factors such as concentration and drinking behaviour were assessed during the same period of each participant’s life. However, data regarding these behaviours from when the participants were younger (below 45 years old) may have been relevant in explaining the onset of dementia.
+
+For example, this model suggests that frequent drinking behaviour has a positive association with cognitive score compared to less than twice a month or not at all, as can be seen in Figure \ref{forest} and visually in Figure \ref{drinking-plot}. On the other hand, the Lancet Commission indicates increased frequency of drinking as a likely risk factor of dementia. One possible reason for this discrepancy is that the data set provides no information about the participants’ drinking behaviour throughout their early life. Drinking frequently at a young age may or may not increase the risk of dementia, even if participants drink with a reduced frequency in later life. This is something our model cannot currently determine.
+
+```{r plots-drinking-affect, fig.width = 8, fig.height=4, fig.cap="\\label{drinking-plot}Drinking behaviour against cognitive score boxplot, showing that increasing frequency of drinking is associated with a higher cognitive score.", fig.pos="H"}
+# Store the graph
+box_plot <- ggplot(training_data_na_omit, aes(x = drinking_behaviour, y = cogscore))
+# Add the geometric object box plot
+box_plot +
+    geom_boxplot() +
+  scale_x_discrete(labels = c("<2 times a month", "1-2 times a week", "3-4 times a week", "Almost every day")) +
+  labs(x = "Drinking behaviour", y = "Cognitive Score")
+```
+
+
+In conclusion, the model has confirmed that older age is a significant predictor of dementia, and has identified further modifiable risk factors such as difficulty in concentration and lower levels of education reached. Furthermore, this report has assessed the predictive performance of the model using validation to ensure good performance. 
+
+
+\begin{thebibliography}{99}
+	
+	\bibitem{Lancet Report}
+  Livingston, Gill et al.,
+	\emph{Dementia prevention, intervention, and care: 2020 report of the Lancet Commission},
+	The Lancet, Volume 396, Issue 10248, 413 - 446, 2020
+	
+	\bibitem{WHO Report}
+	World Health Organization,
+	\emph{Global action plan on the public health response to dementia 2017–2025}, 
+	\url{https://www.who.int/publications/i/item/9789241513487}
+	
+	\bibitem{Epidemiology}
+  Prince et al.,
+  \emph{The Epidemiology and Impact of Dementia - Current State and Future Trends. WHO Thematic Briefing},
+  \url{https://www.researchgate.net/publication/277217355_The_Epidemiology_and_Impact_of_Dementia_-_Current_State_and_Future_Trends_WHO_Thematic_Briefing},
+  March, 2015
+	
+	\bibitem{Risk Prediction}
+	Moons KGM, Kengne AP, Grobbee DE, et al.,
+	\emph{Risk prediction models: II. External validation, model updating, and impact assessment},
+	\url{https://heart.bmj.com/content/98/9/691},
+	Volume 98, 2012
+	
+	\bibitem{Cognition}
+	Crimmins et al.,
+	\emph{Assessment of cognition using surveys and neuropsychological assessment: the Health and Retirement Study and the Aging, Demographics, and Memory Study},
+	\url{https://pubmed.ncbi.nlm.nih.gov/21743047/},
+  2011
+  
+  \bibitem{AICBIC}
+	Henry de-Graft Acquah,
+	\emph{Comparison of Akaike information criterion (AIC) and Bayesian information criterion (BIC) in selection of an asymmetric price relationship},
+	\url{https://academicjournals.org/article/article1379662949_Acquah.pdf},
+  December, 2009
+	
+\end{thebibliography}
